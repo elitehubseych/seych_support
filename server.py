@@ -24,7 +24,7 @@ GROUP_ID = int(os.getenv("VK_GROUP_ID", 0))
 CONFIRMATION = os.getenv("VK_CONFIRMATION_TOKEN")
 SECRET = os.getenv("VK_SECRET_KEY", "")
 
-vk_session = vk_api.VkApi(token=TOKEN, v="5.199")
+vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
 
 processing = set()
