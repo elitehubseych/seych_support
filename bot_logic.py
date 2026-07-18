@@ -127,7 +127,7 @@ def handle_take(user_id: int, ticket_id: int):
         f"💬 Пишите ответ прямо сюда.",
         keyboard=finish_keyboard())
     send(ticket["user_id"],
-        f"📋 Администратор {mention_user(user_id)} взял Ваш вопрос на рассмотрение, ожидайте, Вам сейчас ответят.",
+        f"📋 Администратор взял Ваш вопрос на рассмотрение, ожидайте, Вам сейчас ответят.",
         keyboard=finish_keyboard())
 
 
@@ -319,8 +319,11 @@ def handle_admin_dm(user_id: int, text: str):
         send(ticket["user_id"],
             f"💬 Ответ от администратора:\n{text}",
             keyboard=finish_keyboard())
+        send(user_id,
+            f"✅ Ответ отправлен пользователю.",
+            keyboard=finish_keyboard())
     else:
-        pass
+        send(user_id, "⚠️ У вас нет активных обращений.")
 
 
 # ========================
@@ -372,10 +375,12 @@ def handle_admin_command(user_id: int, text: str):
             return
         lines = ["📋 Список обращений:\n"]
         for t in tickets:
-            if t["status"] == "in_progress" and t.get("admin_name"):
-                status_str = f"🔹 {t['user_name']} #{t['id']} — {t['admin_name']}"
+            user_mention = mention_user(t["user_id"])
+            if t["status"] == "in_progress" and t.get("admin_id"):
+                admin_mention = mention_user(t["admin_id"])
+                status_str = f"🔹 {user_mention} #{t['id']} — {admin_mention}"
             else:
-                status_str = f"🔹 {t['user_name']} #{t['id']} — ⏳ в ожидании"
+                status_str = f"🔹 {user_mention} #{t['id']} — ⏳ в ожидании"
             lines.append(status_str)
         send(user_id, "\n".join(lines))
 
@@ -401,7 +406,7 @@ def handle_admin_command(user_id: int, text: str):
             f"💬 Пишите ответ прямо сюда.",
             keyboard=finish_keyboard())
         send(ticket["user_id"],
-            f"📋 Администратор {mention_user(user_id)} взял Ваш вопрос на рассмотрение, ожидайте, Вам сейчас ответят.",
+            f"📋 Администратор взял Ваш вопрос на рассмотрение, ожидайте, Вам сейчас ответят.",
             keyboard=finish_keyboard())
 
     elif cmd == "/getadmin":
@@ -436,6 +441,18 @@ def handle_admin_command(user_id: int, text: str):
             send(target, "ℹ️ Вы были сняты с роли администратора поддержки.")
         else:
             send(user_id, "ℹ️ Этот пользователь не является администратором.")
+
+    elif cmd == "/admins":
+        admins = db.get_all_admins()
+        all_ids = list(set(admins + [DEVELOPER_ID]))
+        if not all_ids:
+            send(user_id, "📭 Список администраторов пуст.")
+            return
+        lines = ["👥 Список администраторации:\n"]
+        for aid in all_ids:
+            role = "🔧 Разработчик" if aid == DEVELOPER_ID else "🛡️ Администратор"
+            lines.append(f"{role}: {mention_user(aid)}")
+        send(user_id, "\n".join(lines))
 
     elif cmd == "/ban":
         handle_ban_command(user_id, parts)
