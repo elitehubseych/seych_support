@@ -6,8 +6,8 @@ import logging
 import db
 from helpers import (
     get_greeting, is_night, format_datetime, format_ban_duration,
-    parse_duration, cancel_keyboard, admin_ticket_keyboard,
-    finish_keyboard, rating_keyboard, FINISH_BUTTON_TEXT,
+    parse_duration, cancel_keyboard, admin_ticket_inline,
+    finish_keyboard, rating_inline, empty_keyboard,
 )
 
 log = logging.getLogger("support-bot")
@@ -103,7 +103,7 @@ def handle_cancel(user_id: int, ticket_id: int):
         send(user_id, "⚠️ Это обращение уже обрабатывается, отменить невозможно.")
         return
     db.close_ticket(ticket_id)
-    send(user_id, f"❌ Обращение #{ticket_id} отменено.\n\nС уважением, {BOT_NAME}!")
+    send(user_id, f"❌ Обращение #{ticket_id} отменено.\n\nС уважением, {BOT_NAME}!", keyboard=empty_keyboard())
     send_to_other_admins(user_id,
         f"❌ Пользователь {mention_user(user_id)} отменил обращение #{ticket_id}.")
 
@@ -152,14 +152,14 @@ def handle_close(user_id: int, ticket_id: int):
         return
     db.close_ticket(ticket_id)
     send(user_id,
-        f"✅ Вы успешно закрыли обращение #{ticket_id} пользователя {mention_user(ticket['user_id'])}.")
+        f"✅ Вы успешно закрыли обращение #{ticket_id} пользователя {mention_user(ticket['user_id'])}.", keyboard=empty_keyboard())
     send_to_other_admins(user_id,
         f"🚫 Администратор {mention_user(user_id)} закрыл обращение #{ticket_id} пользователя {mention_user(ticket['user_id'])}.")
     send(ticket["user_id"],
-        f"🚫 Ваше обращение #{ticket_id} было закрыто администрацией.")
+        f"🚫 Ваше обращение #{ticket_id} было закрыто администрацией.", keyboard=empty_keyboard())
     send(ticket["user_id"],
         f"⭐ Оцените работу администратора:",
-        keyboard=rating_keyboard(ticket_id))
+        keyboard=rating_inline(ticket_id))
 
 
 def handle_rate(user_id: int, ticket_id: int, rating: int):
@@ -179,30 +179,36 @@ def handle_rate(user_id: int, ticket_id: int, rating: int):
 
 
 def handle_finish(user_id: int):
-    ticket = db.get_user_active_ticket(user_id)
-    if not ticket:
+    if db.is_admin_or_dev(user_id):
+        ticket = None
+        for t in db.get_active_tickets():
+            if t.get("admin_id") == user_id and t["status"] == "in_progress":
+                ticket = t
+                break
+        if not ticket:
+            send(user_id, "⚠️ У вас нет активных обращений.")
+            return
+        db.close_ticket(ticket["id"])
+        send(user_id,
+            f"✅ Вы завершили обращение #{ticket['id']} пользователя {mention_user(ticket['user_id'])}.", keyboard=empty_keyboard())
+        send(ticket["user_id"],
+            f"🚫 Ваше обращение #{ticket['id']} было закрыто администрацией.", keyboard=empty_keyboard())
+        send(ticket["user_id"],
+            f"⭐ Оцените работу администратора:",
+            keyboard=rating_inline(ticket["id"]))
         return
 
-    if db.is_admin_or_dev(user_id):
-        if ticket.get("admin_id") == user_id:
-            db.close_ticket(ticket["id"])
-            send(user_id,
-                f"✅ Вы завершили обращение #{ticket['id']} пользователя {mention_user(ticket['user_id'])}.")
-            send(ticket["user_id"],
-                f"🚫 Ваше обращение #{ticket['id']} было закрыто администрацией.")
-            send(ticket["user_id"],
-                f"⭐ Оцените работу администратора:",
-                keyboard=rating_keyboard(ticket["id"]))
-        else:
-            send(user_id, "⚠️ Это не Ваше обращение.")
+    ticket = db.get_user_active_ticket(user_id)
+    if not ticket:
+        send(user_id, "⚠️ У вас нет активных обращений.")
         return
 
     if ticket["user_id"] == user_id:
         db.close_ticket(ticket["id"])
-        send(user_id, f"✅ Вы завершили обращение #{ticket['id']}.")
+        send(user_id, f"✅ Вы завершили обращение #{ticket['id']}.", keyboard=empty_keyboard())
         if ticket.get("admin_id"):
             send(ticket["admin_id"],
-                f"🔚 Пользователь {mention_user(user_id)} завершил обращение #{ticket['id']}.")
+                f"🔚 Пользователь {mention_user(user_id)} завершил обращение #{ticket['id']}.", keyboard=empty_keyboard())
 
 
 # ========================
@@ -221,10 +227,6 @@ def on_new_message(user_id: int, peer_id: int, text: str, is_dm: bool):
 
 
 def handle_user_dm(user_id: int, text: str):
-    if text == FINISH_BUTTON_TEXT:
-        handle_finish(user_id)
-        return
-
     if text.startswith("/"):
         handle_user_command(user_id, text)
         return
@@ -280,9 +282,9 @@ def create_new_ticket(user_id: int, text: str):
         f"🕐 Дата и время: {format_datetime(ticket['created_at'])}"
     )
     for admin_id in db.get_all_admins():
-        send(admin_id, admin_msg, keyboard=admin_ticket_keyboard(ticket_id))
+        send(admin_id, admin_msg, keyboard=admin_ticket_inline(ticket_id))
     if DEVELOPER_ID not in db.get_all_admins():
-        send(DEVELOPER_ID, admin_msg, keyboard=admin_ticket_keyboard(ticket_id))
+        send(DEVELOPER_ID, admin_msg, keyboard=admin_ticket_inline(ticket_id))
 
 
 def send_user_in_ticket(user_id: int, text: str, ticket: dict):
@@ -306,10 +308,6 @@ def send_user_in_ticket(user_id: int, text: str, ticket: dict):
 
 def handle_admin_dm(user_id: int, text: str):
     if not db.is_admin_or_dev(user_id):
-        return
-
-    if text == FINISH_BUTTON_TEXT:
-        handle_finish(user_id)
         return
 
     if text.startswith("/"):
@@ -359,10 +357,10 @@ def handle_user_command(user_id: int, text: str):
             send(user_id, "⚠️ У вас нет активных обращений.")
             return
         db.close_ticket(ticket["id"])
-        send(user_id, f"✅ Обращение #{ticket['id']} завершено.")
+        send(user_id, f"✅ Обращение #{ticket['id']} завершено.", keyboard=empty_keyboard())
         if ticket.get("admin_id"):
             send(ticket["admin_id"],
-                f"🔚 Пользователь {mention_user(user_id)} завершил обращение #{ticket['id']}.")
+                f"🔚 Пользователь {mention_user(user_id)} завершил обращение #{ticket['id']}.", keyboard=empty_keyboard())
 
 
 # ========================
