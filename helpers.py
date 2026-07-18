@@ -10,15 +10,7 @@ def get_msk_now() -> datetime:
 
 
 def get_greeting() -> str:
-    hour = get_msk_now().hour
-    if 0 <= hour < 6:
-        return "🌙 Доброй ночи"
-    elif 6 <= hour < 12:
-        return "☀️ Доброе утро"
-    elif 12 <= hour < 18:
-        return "🌤️ Добрый день"
-    else:
-        return "🌅 Добрый вечер"
+    return "Доброго времени суток"
 
 
 def is_night() -> bool:
@@ -113,11 +105,14 @@ def admin_ticket_keyboard(ticket_id: int) -> str:
     return json.dumps(kb)
 
 
+FINISH_BUTTON_TEXT = "🔚 Завершить обращение"
+
+
 def finish_keyboard() -> str:
     kb = {
-        "one_time": True,
+        "one_time": False,
         "buttons": [[
-            _text_btn("🔚 Завершить обращение", "negative", {"cmd": "finish_ticket"})
+            _btn(FINISH_BUTTON_TEXT, "negative", {"cmd": "finish_ticket"})
         ]],
     }
     return json.dumps(kb)
