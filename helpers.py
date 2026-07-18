@@ -93,9 +93,9 @@ def cancel_keyboard(ticket_id: int) -> str:
     return json.dumps(kb)
 
 
-def admin_ticket_keyboard(ticket_id: int) -> str:
+def admin_ticket_inline(ticket_id: int) -> str:
     kb = {
-        "one_time": False,
+        "inline": True,
         "buttons": [[
             _btn("✅ Взять в работу", "positive", {"cmd": "take_ticket", "ticket_id": ticket_id}),
             _btn("⏭️ Пропустить", "secondary", {"cmd": "skip_ticket", "ticket_id": ticket_id}),
@@ -105,14 +105,11 @@ def admin_ticket_keyboard(ticket_id: int) -> str:
     return json.dumps(kb)
 
 
-FINISH_BUTTON_TEXT = "🔚 Завершить обращение"
-
-
 def finish_keyboard() -> str:
     kb = {
         "one_time": False,
         "buttons": [[
-            _btn(FINISH_BUTTON_TEXT, "negative", {"cmd": "finish_ticket"})
+            _btn("🔚 Завершить обращение", "negative", {"cmd": "finish_ticket"})
         ]],
     }
     return json.dumps(kb)
