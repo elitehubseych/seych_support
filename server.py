@@ -127,7 +127,7 @@ app = web.Application()
 app.router.add_post("/", handle_event)
 
 if __name__ == "__main__":
-    host = os.getenv("SERVER_HOST", "0.0.0.0")
-    port = int(os.getenv("SERVER_PORT", 8080))
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", os.getenv("SERVER_PORT", 8080)))
     log.info(f"🚀 Starting webhook server on {host}:{port}")
     web.run_app(app, host=host, port=port)
