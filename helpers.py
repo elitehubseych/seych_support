@@ -115,9 +115,9 @@ def finish_keyboard() -> str:
     return json.dumps(kb)
 
 
-def rating_keyboard(ticket_id: int) -> str:
+def rating_inline(ticket_id: int) -> str:
     kb = {
-        "one_time": True,
+        "inline": True,
         "buttons": [[
             _btn("😡", "negative", {"cmd": "rate", "ticket_id": ticket_id, "rating": 1}),
             _btn("😟", "negative", {"cmd": "rate", "ticket_id": ticket_id, "rating": 2}),
@@ -130,4 +130,4 @@ def rating_keyboard(ticket_id: int) -> str:
 
 
 def empty_keyboard() -> str:
-    return json.dumps({"buttons": []})
+    return json.dumps({"one_time": True, "buttons": []})
