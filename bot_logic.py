@@ -7,7 +7,7 @@ import db
 from helpers import (
     get_greeting, is_night, format_datetime, format_ban_duration,
     parse_duration, cancel_keyboard, admin_ticket_keyboard,
-    finish_keyboard, rating_keyboard,
+    finish_keyboard, rating_keyboard, FINISH_BUTTON_TEXT,
 )
 
 log = logging.getLogger("support-bot")
@@ -221,6 +221,10 @@ def on_new_message(user_id: int, peer_id: int, text: str, is_dm: bool):
 
 
 def handle_user_dm(user_id: int, text: str):
+    if text == FINISH_BUTTON_TEXT:
+        handle_finish(user_id)
+        return
+
     if text.startswith("/"):
         handle_user_command(user_id, text)
         return
@@ -302,6 +306,10 @@ def send_user_in_ticket(user_id: int, text: str, ticket: dict):
 
 def handle_admin_dm(user_id: int, text: str):
     if not db.is_admin_or_dev(user_id):
+        return
+
+    if text == FINISH_BUTTON_TEXT:
+        handle_finish(user_id)
         return
 
     if text.startswith("/"):
