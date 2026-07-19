@@ -8,6 +8,11 @@ from config import GROUP_TOKEN, CHAT_READ, CHAT_WRITE, CONFIRM_CODE, ROLE_CHECKE
 
 app = Flask(__name__)
 
+if not GROUP_TOKEN:
+    print("ОШИБКА: GROUP_TOKEN не задан!", flush=True)
+    exit(1)
+print(f"GROUP_TOKEN: {GROUP_TOKEN[:10]}...", flush=True)
+
 vk = vk_api.VkApi(token=GROUP_TOKEN)
 api = vk.get_api()
 
