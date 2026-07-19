@@ -3,6 +3,7 @@ import vk_api
 import time
 import re
 import threading
+import base64
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.utils import get_random_id
 from flask import Flask, request
@@ -46,10 +47,10 @@ def auth():
         token = vk.token["access_token"]
         return f"<h1>ТОКЕН:</h1><p>Добавь в USER_TOKEN на Render:</p><textarea rows='3' cols='60'>{token}</textarea>"
     except vk_api.exceptions.Captcha as e:
-        url = e.get_url()
+        img_data = base64.b64encode(e.get_image()).decode()
         sid = e.sid
         return f"""<h2>Нужна CAPTCHA</h2>
-        <img src="{url}"><br>
+        <img src="data:image/jpeg;base64,{img_data}"><br>
         <form method='post' action='/auth'>
             <input name='phone' value='{phone}' type='hidden'>
             <input name='password' value='{password}' type='hidden'>
