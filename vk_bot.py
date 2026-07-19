@@ -53,7 +53,6 @@ def vk_auth(phone, password, captcha_sid=None, captcha_key=None):
         data["captcha_key"] = captcha_key
 
     resp = s.post("https://login.vk.com/", data=data, allow_redirects=True)
-
     url = resp.url
     text = resp.text
 
@@ -72,7 +71,7 @@ def vk_auth(phone, password, captcha_sid=None, captcha_key=None):
     if cap_sid and cap_img:
         return None, cap_sid.group(1), cap_img.group(1)
 
-    raise Exception("Не удалось авторизоваться. Проверь телефон и пароль.")
+    raise Exception(f"VK ответ: URL={url[:200]} | Тело={text[:500]}")
 
 
 @app.route("/auth", methods=["POST"])
@@ -102,6 +101,12 @@ def auth():
         return "Ошибка авторизации"
     except Exception as e:
         return f"Ошибка: {e}"
+
+
+@app.route("/ip")
+def show_ip():
+    r = requests.get("https://ifconfig.me", headers={"User-Agent": "curl/8.0"})
+    return f"IP Render: {r.text.strip()}"
 
 
 @app.route("/ping")
