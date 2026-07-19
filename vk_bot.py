@@ -4,14 +4,13 @@ import re
 import threading
 from vk_api.longpoll import VkLongPoll, VkEventType
 from vk_api.utils import get_random_id
-import os
+from config import USER_TOKEN, CHAT_READ, CHAT_WRITE, ROLE_CHECKER_ID, TIMEOUT_SECONDS
 
-USER_TOKEN = os.environ["USER_TOKEN"]
-CHAT_READ = int(os.environ.get("CHAT_READ", "2000000020"))
-CHAT_WRITE = int(os.environ.get("CHAT_WRITE", "2000000206"))
-ROLE_CHECKER_ID = int(os.environ.get("ROLE_CHECKER_ID", "-218136766"))
-TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "30"))
+if not USER_TOKEN:
+    print("Ошибка: USER_TOKEN не задан!")
+    exit(1)
 
+print(f"Токен загружен: {USER_TOKEN[:10]}...{USER_TOKEN[-5:]}")
 vk = vk_api.VkApi(token=USER_TOKEN)
 api = vk.get_api()
 
@@ -24,11 +23,11 @@ def send_msg(peer_id, message):
         api.messages.send(peer_id=peer_id, message=message, random_id=get_random_id())
         print(f"[{time.strftime('%H:%M:%S')}] -> [{peer_id}] {message}")
     except Exception as e:
-        print(f"[{time.strftime('%H:%M:%S')}] Ошибка: {e}")
+        print(f"[{time.strftime('%H:%M:%S')}] Ошибка отправки: {e}")
 
 
 def log(msg):
-    print(f"[{time.strftime('%H:%M:%S')}] {msg}")
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def on_timeout(writer_id):
@@ -82,9 +81,7 @@ for event in lp.listen():
     if pid == CHAT_READ and text.lower().startswith('code '):
         mention = re.search(r'\[id(\d+)\|@?([^\]]+)\]', text)
         if mention:
-            target_id = mention.group(1)
-            target_name = mention.group(2)
-            on_code(uid, target_name, target_id)
+            on_code(uid, mention.group(2), mention.group(1))
 
     if uid == ROLE_CHECKER_ID:
         on_role(uid, text)
