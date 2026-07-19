@@ -102,24 +102,34 @@ threading.Thread(target=keep_alive, daemon=True).start()
 
 
 def handle_code_flow(from_id: int, peer_id: int, text: str) -> bool:
+    log.info(f"🔍 Проверка: from={from_id} peer={peer_id} text={text!r}")
+
     if peer_id == CHAT_READ and text.lower().startswith("code "):
         mention = re.search(r"\[id(\d+)\|@?([^\]]+)\]", text)
-        if mention:
+        if not mention:
+            mention = re.search(r"code\s+@(\S+)", text, re.IGNORECASE)
+            if mention:
+                target_name = mention.group(1)
+                target_id = "0"
+            else:
+                return False
+        else:
             target_id = mention.group(1)
             target_name = mention.group(2)
-            code_pending[from_id] = {"target_name": target_name, "target_id": target_id}
-            log.info(f"code @{target_name} (id{target_id}) от user {from_id}")
-            send_chat(CHAT_WRITE, f"роль [id{from_id}|@]")
 
-            def timeout():
-                code_pending.pop(from_id, None)
-                code_timers.pop(from_id, None)
-                log.info(f"Таймаут code для user {from_id}")
+        code_pending[from_id] = {"target_name": target_name, "target_id": target_id}
+        log.info(f"✅ code @{target_name} (id{target_id}) от user {from_id}")
+        send_chat(CHAT_WRITE, f"роль [id{from_id}|@]")
 
-            timer = threading.Timer(TIMEOUT_SECONDS, timeout)
-            code_timers[from_id] = timer
-            timer.start()
-            return True
+        def timeout():
+            code_pending.pop(from_id, None)
+            code_timers.pop(from_id, None)
+            log.info(f"Таймаут code для user {from_id}")
+
+        timer = threading.Timer(TIMEOUT_SECONDS, timeout)
+        code_timers[from_id] = timer
+        timer.start()
+        return True
 
     if from_id == ROLE_CHECKER_ID:
         match = re.search(r"Роль\s+\[id(\d+)\|?([^\]]*)\]\s*[—–\-]\s*\[LUXE\]", text, re.IGNORECASE)
@@ -157,7 +167,7 @@ async def handle_event(request):
         from_id = msg.get("from_id", 0)
         text = msg.get("text", "").strip()
 
-        log.info(f"📩 MSG from={from_id} text={text!r}")
+        log.info(f"📩 MSG from={from_id} peer={peer_id} text={text!r}")
 
         if from_id <= 0:
             return web.Response(text="ok")
