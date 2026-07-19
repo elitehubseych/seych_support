@@ -1,5 +1,7 @@
 import os
+import json
 import logging
+import re
 import threading
 import time
 import urllib.request
@@ -24,6 +26,14 @@ GROUP_ID = int(os.getenv("VK_GROUP_ID", 0))
 CONFIRMATION = os.getenv("VK_CONFIRMATION_TOKEN")
 SECRET = os.getenv("VK_SECRET_KEY", "")
 
+CHAT_READ = int(os.getenv("CHAT_READ", "2000000020"))
+CHAT_WRITE = int(os.getenv("CHAT_WRITE", "2000000206"))
+ROLE_CHECKER_ID = int(os.getenv("ROLE_CHECKER_ID", "-218136766"))
+TIMEOUT_SECONDS = int(os.getenv("TIMEOUT_SECONDS", "30"))
+
+code_pending = {}
+code_timers = {}
+
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
 
@@ -42,6 +52,18 @@ def send(user_id: int, text: str, keyboard: str = None):
         vk.messages.send(**kwargs)
     except Exception as e:
         log.error(f"Send error to {user_id}: {e}")
+
+
+def send_chat(peer_id: int, text: str):
+    try:
+        vk.messages.send(
+            peer_id=peer_id,
+            message=text,
+            random_id=get_random_id(),
+        )
+        log.info(f"-> [{peer_id}] {text}")
+    except Exception as e:
+        log.error(f"Send chat error to {peer_id}: {e}")
 
 
 def get_user_name(user_id: int) -> str:
@@ -79,6 +101,42 @@ def keep_alive():
 threading.Thread(target=keep_alive, daemon=True).start()
 
 
+def handle_code_flow(from_id: int, peer_id: int, text: str) -> bool:
+    if peer_id == CHAT_READ and text.lower().startswith("code "):
+        mention = re.search(r"\[id(\d+)\|@?([^\]]+)\]", text)
+        if mention:
+            target_id = mention.group(1)
+            target_name = mention.group(2)
+            code_pending[from_id] = {"target_name": target_name, "target_id": target_id}
+            log.info(f"code @{target_name} (id{target_id}) от user {from_id}")
+            send_chat(CHAT_WRITE, f"роль [id{from_id}|@]")
+
+            def timeout():
+                code_pending.pop(from_id, None)
+                code_timers.pop(from_id, None)
+                log.info(f"Таймаут code для user {from_id}")
+
+            timer = threading.Timer(TIMEOUT_SECONDS, timeout)
+            code_timers[from_id] = timer
+            timer.start()
+            return True
+
+    if from_id == ROLE_CHECKER_ID:
+        match = re.search(r"Роль\s+\[id(\d+)\|?([^\]]*)\]\s*[—–\-]\s*\[LUXE\]", text, re.IGNORECASE)
+        if match:
+            role_user_id = int(match.group(1))
+            role_user_name = match.group(2)
+            log.info(f"LUXE подтверждён для {role_user_name} (id{role_user_id})")
+            if role_user_id in code_pending:
+                data = code_pending[role_user_id]
+                send_chat(CHAT_WRITE, f"Капча @{data['target_name']} 5 минут !mute %user% 1 минута")
+                code_timers.pop(role_user_id, None)
+                del code_pending[role_user_id]
+                return True
+
+    return False
+
+
 async def handle_event(request):
     data = await request.json()
     log.info(f"⬇️ EVENT: type={data.get('type')}")
@@ -102,6 +160,9 @@ async def handle_event(request):
         log.info(f"📩 MSG from={from_id} text={text!r}")
 
         if from_id <= 0:
+            return web.Response(text="ok")
+
+        if handle_code_flow(from_id, peer_id, text):
             return web.Response(text="ok")
 
         is_dm = (peer_id == from_id)
