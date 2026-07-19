@@ -30,6 +30,66 @@ def index():
     """
 
 
+VK_APP_ID = 2274003
+VK_API_V = "5.199"
+
+
+def vk_auth(phone, password, captcha_sid=None, captcha_key=None):
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    })
+
+    resp = s.get("https://oauth.vk.com/authorize", params={
+        "client_id": VK_APP_ID,
+        "display": "page",
+        "redirect_uri": "https://oauth.vk.com/blank.html",
+        "scope": "messages",
+        "response_type": "token",
+        "v": VK_API_V,
+    })
+
+    login_page = resp.text
+    act_match = re.search(r' action="([^"]+)"', login_page)
+    if not act_match:
+        raise Exception("Не удалось найти форму входа VK")
+    action_url = act_match.group(1).replace("&amp;", "&")
+
+    data = {"email": phone, "pass": password}
+    if captcha_sid and captcha_key:
+        data["captcha_sid"] = captcha_sid
+        data["captcha_key"] = captcha_key
+
+    resp = s.post(action_url, data=data, allow_redirects=False)
+
+    if resp.status_code == 302:
+        location = resp.headers.get("Location", "")
+        if "access_token" in location:
+            token = re.search(r'access_token=([^&]+)', location)
+            if token:
+                return token.group(1), None, None
+        return s.get(location).text, None, None
+
+    html = resp.text
+
+    if "captcha" in html.lower() or "cap_code" in html:
+        cap_match = re.search(r'captcha_sid["\s:=]+(\d+)', html)
+        cap_img = re.search(r'(https?://[^"\']+captcha[^"\']+)', html)
+        if cap_match and cap_img:
+            return None, cap_match.group(1), cap_img.group(1)
+
+    if "redirect" in html.lower() or "blank.html" in html:
+        redir = re.search(r'location\.href\s*=\s*["\']([^"\']+)', html)
+        if redir:
+            loc = redir.group(1)
+            token = re.search(r'access_token=([^&]+)', loc)
+            if token:
+                return token.group(1), None, None
+
+    raise Exception(f"Ошибка авторизации. Возможно, нужен код из SMS.")
+
+
 @app.route("/auth", methods=["POST"])
 def auth():
     phone = request.form.get("phone", "")
@@ -39,32 +99,22 @@ def auth():
     if not phone or not password:
         return "Заполни все поля"
     try:
-        kw = dict(login=phone, password=password, app_id=2274003, scope="messages")
-        if captcha_sid and captcha_answer:
-            kw["captcha_sid"] = captcha_sid
-            kw["captcha_answer"] = captcha_answer
-        vk = vk_api.VkApi(**kw)
-        vk.auth()
-        token = vk.token["access_token"]
-        return f"<h1>ТОКЕН:</h1><p>Добавь в USER_TOKEN на Render:</p><textarea rows='3' cols='60'>{token}</textarea>"
-    except vk_api.exceptions.Captcha as e:
-        url = e.get_url()
-        sid = e.sid
-        try:
-            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+        token, new_sid, captcha_url = vk_auth(phone, password)
+        if captcha_url:
+            r = requests.get(captcha_url, headers={"User-Agent": "Mozilla/5.0"})
             img_data = base64.b64encode(r.content).decode()
-            src = f"data:image/jpeg;base64,{img_data}"
-        except:
-            src = url
-        return f"""<h2>Нужна CAPTCHA</h2>
-        <img src="{src}" style="max-width:300px"><br>
-        <form method='post' action='/auth'>
-            <input name='phone' value='{phone}' type='hidden'>
-            <input name='password' value='{password}' type='hidden'>
-            <input name='captcha_sid' value='{sid}' type='hidden'>
-            <input name='captcha_answer' placeholder='Введите текст с картинки'><br><br>
-            <button type='submit'>Отправить</button>
-        </form>"""
+            return f"""<h2>CAPTCHA</h2>
+            <img src="data:image/jpeg;base64,{img_data}" style="max-width:300px"><br>
+            <form method='post' action='/auth'>
+                <input name='phone' value='{phone}' type='hidden'>
+                <input name='password' value='{password}' type='hidden'>
+                <input name='captcha_sid' value='{new_sid}' type='hidden'>
+                <input name='captcha_answer' placeholder='Текст с картинки'><br><br>
+                <button type='submit'>Отправить</button>
+            </form>"""
+        if token:
+            return f"<h1>ТОКЕН:</h1><textarea rows='3' cols='60'>{token}</textarea>"
+        return "Ошибка авторизации"
     except Exception as e:
         return f"Ошибка: {e}"
 
