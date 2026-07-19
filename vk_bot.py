@@ -1,5 +1,4 @@
 import os
-import json
 import vk_api
 import time
 import re
@@ -15,58 +14,49 @@ ROLE_CHECKER_ID = int(os.environ.get("ROLE_CHECKER_ID", "-218136766"))
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "30"))
 
 app = Flask(__name__)
-token_result = {}
 
 
 @app.route("/")
 def index():
-    if token_result.get("token"):
-        return f"<h1>ГОТОВО!</h1><textarea rows='3' cols='60'>{token_result['token']}</textarea><p>Добавь в USER_TOKEN</p>"
     return """
     <h2>Получение VK токена с IP Render</h2>
     <form method="post" action="/auth">
-        <input name="phone" placeholder="Телефон (+7...)"><br>
-        <input name="password" placeholder="Пароль" type="password"><br>
+        <input name="phone" placeholder="Телефон (+7...)"><br><br>
+        <input name="password" placeholder="Пароль" type="password"><br><br>
         <button type="submit">Получить токен</button>
     </form>
     """
 
 
-captcha_sid = None
-captcha_img = None
-
-
-def make_captcha_handler():
-    def handler(captcha):
-        global captcha_sid, captcha_img
-        captcha_sid = captcha.sid
-        captcha_img = captcha.get_url()
-        return captcha
-    return handler
-
-
 @app.route("/auth", methods=["POST"])
 def auth():
-    global captcha_sid, captcha_img
     phone = request.form.get("phone", "")
     password = request.form.get("password", "")
+    captcha_sid = request.form.get("captcha_sid", "")
     captcha_answer = request.form.get("captcha_answer", "")
     if not phone or not password:
         return "Заполни все поля"
     try:
-        kw = dict(login=phone, password=password, app_id=2274003, scope="messages", captcha_handler=make_captcha_handler())
+        kw = dict(login=phone, password=password, app_id=2274003, scope="messages")
         if captcha_sid and captcha_answer:
             kw["captcha_sid"] = captcha_sid
             kw["captcha_answer"] = captcha_answer
         vk = vk_api.VkApi(**kw)
         vk.auth()
         token = vk.token["access_token"]
-        token_result["token"] = token
-        captcha_sid = None
-        captcha_img = None
-        return f"<h1>ТОКЕН:</h1><textarea rows='3' cols='60'>{token}</textarea>"
+        return f"<h1>ТОКЕН:</h1><p>Добавь в USER_TOKEN на Render:</p><textarea rows='3' cols='60'>{token}</textarea>"
     except vk_api.exceptions.Captcha as e:
-        return f"<h2>Нужна CAPTCHA</h2><img src='{e.get_url()}'><form method='post' action='/auth'><input name='phone' value='{phone}' type='hidden'><input name='password' value='{password}' type='hidden'><input name='captcha_sid' value='{e.sid}' type='hidden'><input name='captcha_answer' placeholder='Введите текст'><button type='submit'>Отправить</button></form>"
+        url = e.get_url()
+        sid = e.sid
+        return f"""<h2>Нужна CAPTCHA</h2>
+        <img src="{url}"><br>
+        <form method='post' action='/auth'>
+            <input name='phone' value='{phone}' type='hidden'>
+            <input name='password' value='{password}' type='hidden'>
+            <input name='captcha_sid' value='{sid}' type='hidden'>
+            <input name='captcha_answer' placeholder='Введите текст с картинки'><br><br>
+            <button type='submit'>Отправить</button>
+        </form>"""
     except Exception as e:
         return f"Ошибка: {e}"
 
@@ -78,7 +68,7 @@ def ping():
 
 def run_bot():
     if not USER_TOKEN:
-        print("USER_TOKEN не задан, бот не запускается")
+        print("USER_TOKEN не задан, бот не запускается", flush=True)
         return
 
     vk = vk_api.VkApi(token=USER_TOKEN)
