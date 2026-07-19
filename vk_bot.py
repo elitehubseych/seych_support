@@ -38,68 +38,53 @@ def vk_auth(phone, password, captcha_sid=None, captcha_key=None):
     s = requests.Session()
     s.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Language": "ru-RU,ru;q=0.9",
     })
 
-    resp = s.get("https://oauth.vk.com/authorize", params={
-        "client_id": VK_APP_ID,
-        "display": "page",
-        "redirect_uri": "https://oauth.vk.com/blank.html",
-        "scope": "messages",
-        "response_type": "token",
-        "v": VK_API_V,
-    })
-
-    login_page = resp.text
-    act_match = re.search(r' action="([^"]+)"', login_page)
-    if not act_match:
-        raise Exception("Не удалось найти форму входа VK")
-    action_url = act_match.group(1).replace("&amp;", "&")
-
-    data = {"email": phone, "pass": password}
+    data = {
+        "act": "login",
+        "role": "al_frame",
+        "utf8": "1",
+        "email": phone,
+        "pass": password,
+    }
     if captcha_sid and captcha_key:
         data["captcha_sid"] = captcha_sid
         data["captcha_key"] = captcha_key
 
-    resp = s.post(action_url, data=data, allow_redirects=False)
+    resp = s.post("https://login.vk.com/", data=data, allow_redirects=True)
 
-    if resp.status_code == 302:
-        location = resp.headers.get("Location", "")
-        if "access_token" in location:
-            token = re.search(r'access_token=([^&]+)', location)
-            if token:
-                return token.group(1), None, None
-        return s.get(location).text, None, None
+    url = resp.url
+    text = resp.text
 
-    html = resp.text
+    if "access_token" in url:
+        token = re.search(r'access_token=([^&]+)', url)
+        if token:
+            return token.group(1), None, None
 
-    if "captcha" in html.lower() or "cap_code" in html:
-        cap_match = re.search(r'captcha_sid["\s:=]+(\d+)', html)
-        cap_img = re.search(r'(https?://[^"\']+captcha[^"\']+)', html)
-        if cap_match and cap_img:
-            return None, cap_match.group(1), cap_img.group(1)
+    if "access_token" in text:
+        token = re.search(r'access_token=([^&]+)', text)
+        if token:
+            return token.group(1), None, None
 
-    if "redirect" in html.lower() or "blank.html" in html:
-        redir = re.search(r'location\.href\s*=\s*["\']([^"\']+)', html)
-        if redir:
-            loc = redir.group(1)
-            token = re.search(r'access_token=([^&]+)', loc)
-            if token:
-                return token.group(1), None, None
+    cap_sid = re.search(r'captcha_sid["\s:=]+["\']?(\d+)', text)
+    cap_img = re.search(r'(https?://[^"\'\\]+captcha[^"\'\\]+)', text)
+    if cap_sid and cap_img:
+        return None, cap_sid.group(1), cap_img.group(1)
 
-    raise Exception(f"Ошибка авторизации. Возможно, нужен код из SMS.")
+    raise Exception("Не удалось авторизоваться. Проверь телефон и пароль.")
 
 
 @app.route("/auth", methods=["POST"])
 def auth():
     phone = request.form.get("phone", "")
     password = request.form.get("password", "")
-    captcha_sid = request.form.get("captcha_sid", "")
-    captcha_answer = request.form.get("captcha_answer", "")
+    captcha_sid = request.form.get("captcha_sid", "") or None
+    captcha_answer = request.form.get("captcha_answer", "") or None
     if not phone or not password:
         return "Заполни все поля"
     try:
-        token, new_sid, captcha_url = vk_auth(phone, password)
+        token, new_sid, captcha_url = vk_auth(phone, password, captcha_sid, captcha_answer)
         if captcha_url:
             r = requests.get(captcha_url, headers={"User-Agent": "Mozilla/5.0"})
             img_data = base64.b64encode(r.content).decode()
@@ -113,7 +98,7 @@ def auth():
                 <button type='submit'>Отправить</button>
             </form>"""
         if token:
-            return f"<h1>ТОКЕН:</h1><textarea rows='3' cols='60'>{token}</textarea>"
+            return f"<h1>ГОТОВО!</h1><p>Токен привязан к IP Render. Добавь в USER_TOKEN:</p><textarea rows='3' cols='60'>{token}</textarea>"
         return "Ошибка авторизации"
     except Exception as e:
         return f"Ошибка: {e}"
