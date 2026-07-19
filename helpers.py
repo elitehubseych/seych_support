@@ -1,133 +1,94 @@
 import json
-from datetime import datetime, timezone, timedelta
-
-
-MSK = timezone(timedelta(hours=3))
-
-
-def get_msk_now() -> datetime:
-    return datetime.now(MSK)
+import datetime
+import re
 
 
 def get_greeting() -> str:
-    return "Доброго времени суток"
+    hour = datetime.datetime.now().hour
+    if 5 <= hour < 12:
+        return "Доброе утро"
+    elif 12 <= hour < 18:
+        return "Добрый день"
+    elif 18 <= hour < 23:
+        return "Добрый вечер"
+    return "Доброй ночи"
 
 
 def is_night() -> bool:
-    return 0 <= get_msk_now().hour < 6
+    hour = datetime.datetime.now().hour
+    return hour < 6 or hour >= 23
 
 
 def format_datetime(ts: float) -> str:
-    dt = datetime.fromtimestamp(ts, tz=MSK)
-    return dt.strftime("%d.%m.%Y %H:%M:%S")
+    return datetime.datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M")
 
 
 def format_ban_duration(seconds: float) -> str:
-    if seconds is None:
-        return "∞ навсегда"
-    days = int(seconds // 86400)
-    hours = int((seconds % 86400) // 3600)
-    minutes = int((seconds % 3600) // 60)
-    parts = []
-    if days > 0:
-        parts.append(f"{days} дн.")
-    if hours > 0:
-        parts.append(f"{hours} ч.")
-    if minutes > 0:
-        parts.append(f"{minutes} мин.")
-    return " ".join(parts) if parts else "< 1 мин."
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds} сек."
+    if seconds < 3600:
+        return f"{seconds // 60} мин."
+    if seconds < 86400:
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h} ч. {m} мин."
+    d = seconds // 86400
+    h = (seconds % 86400) // 3600
+    return f"{d} дн. {h} ч."
 
 
-def parse_duration(text: str) -> int | None:
-    text = text.lower().strip()
-    parts = text.split()
-    if len(parts) < 2:
+def parse_duration(text: str):
+    match = re.match(r"(\d+)\s*(м|min|ч|h|д|d|с|s)", text.lower())
+    if not match:
         return None
-    try:
-        num = int(parts[0])
-    except ValueError:
-        return None
-    unit = parts[1]
-    if unit in ("мин", "минута", "минуты", "минут", "минуту", "minutes", "min"):
-        return num * 60
-    elif unit in ("ч", "час", "часа", "часов", "часу", "hours", "hour", "h"):
-        return num * 3600
-    elif unit in ("д", "день", "дня", "дней", "дню", "days", "day", "d"):
-        return num * 86400
-    elif unit in ("год", "года", "лет", "году", "years", "year", "y"):
-        return num * 31536000
+    val = int(match.group(1))
+    unit = match.group(2)
+    if unit in ("м", "min"):
+        return val * 60
+    if unit in ("ч", "h"):
+        return val * 3600
+    if unit in ("д", "d"):
+        return val * 86400
+    if unit in ("с", "s"):
+        return val
     return None
 
 
-# --- VK Keyboards ---
-
-def _btn(label: str, color: str, payload: dict) -> dict:
-    return {
-        "action": {
-            "type": "callback",
-            "label": label,
-            "payload": json.dumps(payload),
-        },
-        "color": color,
-    }
+def _btn(label, color="secondary", payload=None):
+    b = {"action": {"type": "text", "label": label, "color": color}}
+    if payload:
+        b["action"]["payload"] = json.dumps(payload)
+    return b
 
 
-def _text_btn(label: str, color: str, payload: dict) -> dict:
-    return {
-        "action": {
-            "type": "text",
-            "label": label,
-            "payload": json.dumps(payload),
-        },
-        "color": color,
-    }
+def _kb(rows, one_time=False, inline=False):
+    return json.dumps({"one_time": one_time, "inline": inline, "buttons": rows})
 
 
-def cancel_keyboard(ticket_id: int) -> str:
-    kb = {
-        "one_time": True,
-        "buttons": [[
-            _btn("❌ Отменить обращение", "negative", {"cmd": "cancel_ticket", "ticket_id": ticket_id})
-        ]],
-    }
-    return json.dumps(kb)
+def cancel_keyboard(ticket_id):
+    return _kb([[_btn("❌ Отменить", "negative", {"cmd": "cancel_ticket", "ticket_id": ticket_id})]])
 
 
-def admin_ticket_inline(ticket_id: int) -> str:
-    kb = {
-        "inline": True,
-        "buttons": [[
-            _btn("✅ Взять в работу", "positive", {"cmd": "take_ticket", "ticket_id": ticket_id}),
-            _btn("⏭️ Пропустить", "secondary", {"cmd": "skip_ticket", "ticket_id": ticket_id}),
-            _btn("🚫 Закрыть", "negative", {"cmd": "close_ticket", "ticket_id": ticket_id}),
-        ]],
-    }
-    return json.dumps(kb)
+def admin_ticket_inline(ticket_id):
+    return _kb([
+        [
+            _btn("✅ Взять", "positive", {"cmd": "take_ticket", "ticket_id": ticket_id}),
+            _btn("⏭ Пропустить", "secondary", {"cmd": "skip_ticket", "ticket_id": ticket_id}),
+        ]
+    ], inline=True)
 
 
-def finish_keyboard() -> str:
-    kb = {
-        "one_time": False,
-        "buttons": [[
-            _btn("🔚 Завершить обращение", "negative", {"cmd": "finish_ticket"})
-        ]],
-    }
-    return json.dumps(kb)
+def finish_keyboard():
+    return _kb([[_btn("🔚 Завершить", "primary", {"cmd": "finish_ticket"})]])
 
 
-def rating_inline(ticket_id: int) -> str:
-    kb = {
-        "inline": True,
-        "buttons": [[
-            _btn("😡", "negative", {"cmd": "rate", "ticket_id": ticket_id, "rating": 1}),
-            _btn("😟", "negative", {"cmd": "rate", "ticket_id": ticket_id, "rating": 2}),
-            _btn("😐", "secondary", {"cmd": "rate", "ticket_id": ticket_id, "rating": 3}),
-            _btn("🙂", "positive", {"cmd": "rate", "ticket_id": ticket_id, "rating": 4}),
-            _btn("😍", "positive", {"cmd": "rate", "ticket_id": ticket_id, "rating": 5}),
-        ]],
-    }
-    return json.dumps(kb)
+def rating_inline(ticket_id):
+    buttons = []
+    for i in range(1, 6):
+        buttons.append(_btn(f"{'⭐' * i}", "secondary", {"cmd": "rate", "ticket_id": ticket_id, "rating": i}))
+    return _kb([buttons], inline=True)
 
 
-def empty_keyboard() -> str:
-    return json.dumps({"one_time": True, "buttons": []})
+def empty_keyboard():
+    return _kb([[]])
