@@ -97,13 +97,18 @@ def vk_callback():
         if from_id < 0:
             log(f"Сообщение от группы {from_id}: {text}")
 
-        if chat_id == CHAT_READ and is_sticker(msg) and state["stickers_disabled"] and from_id != DEVELOPER_ID:
-            try:
-                api.messages.delete(conversation_message_ids=msg_id, peer_id=chat_id, spam=False)
-                log(f"Удалён стикер от {from_id} в чате {chat_id}")
-            except Exception as e:
-                log(f"Ошибка удаления стикера: {e}")
-            return "ok"
+        if chat_id == CHAT_WRITE and from_id != DEVELOPER_ID:
+            if is_sticker(msg) and state["stickers_disabled"]:
+                msg_id = msg.get("id", 0)
+                try:
+                    api.messages.delete(message_ids=msg_id, spam=False)
+                    log(f"Удалён стикер от {from_id} в архивном чате, msg_id={msg_id}")
+                except Exception as e:
+                    log(f"Ошибка удаления стикера (id={msg_id}): {e}")
+                return "ok"
+            attachments = msg.get("attachments", [])
+            if attachments:
+                log(f"Вложения от {from_id}: {json.dumps(attachments, ensure_ascii=False)[:300]}")
 
         if chat_id == CHAT_WRITE and text.lower() == "/stick":
             if from_id != DEVELOPER_ID:
