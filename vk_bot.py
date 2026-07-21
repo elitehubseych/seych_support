@@ -2,9 +2,10 @@ import os
 import vk_api
 import time
 import re
+import json
 from flask import Flask, request
 from vk_api.utils import get_random_id
-from config import GROUP_TOKEN, CHAT_READ, CHAT_WRITE, CONFIRM_CODE, ROLE_CHECKER_ID
+from config import GROUP_TOKEN, CHAT_READ, CHAT_WRITE, CONFIRM_CODE, ROLE_CHECKER_ID, DEVELOPER_ID
 
 app = Flask(__name__)
 
@@ -17,6 +18,23 @@ vk = vk_api.VkApi(token=GROUP_TOKEN)
 api = vk.get_api()
 
 pending = {}
+stickers_disabled = True
+
+STICKER_FILE = "stickers_state.json"
+
+def load_sticker_state():
+    global stickers_disabled
+    try:
+        with open(STICKER_FILE, "r") as f:
+            stickers_disabled = json.load(f).get("disabled", True)
+    except:
+        stickers_disabled = True
+
+def save_sticker_state():
+    with open(STICKER_FILE, "w") as f:
+        json.dump({"disabled": stickers_disabled}, f)
+
+load_sticker_state()
 
 
 def log(msg):
@@ -31,9 +49,32 @@ def send_msg(peer_id, message):
         log(f"Ошибка отправки в {peer_id}: {e}")
 
 
+def get_chat_title(peer_id):
+    try:
+        chats = api.messages.getConversationsById(peer_ids=peer_id)
+        for item in chats.get("items", []):
+            if "chat_settings" in item:
+                return item["chat_settings"].get("title", "Беседа")
+    except:
+        pass
+    return "Беседа"
+
+
+def is_sticker(msg):
+    attachments = msg.get("attachments", [])
+    for a in attachments:
+        if a.get("type") == "sticker":
+            return True
+    return False
+
+
 me = api.groups.getById()
 group_id = me[0]["id"]
 log(f"Группа: {me[0]['name']} (ID: {group_id})")
+log(f"Stickers disabled: {stickers_disabled}")
+
+chat_title = get_chat_title(CHAT_READ)
+log(f"Основной чат: {chat_title} ({CHAT_READ})")
 
 
 @app.route("/vk", methods=["POST"])
@@ -50,11 +91,34 @@ def vk_callback():
         text = msg.get("text", "").strip()
         from_id = msg.get("from_id", 0)
         chat_id = msg.get("peer_id", 0)
+        msg_id = msg.get("conversation_message_id", 0)
 
         log(f"Чат {chat_id} | Из {from_id}: {text}")
 
         if from_id < 0:
             log(f"Сообщение от группы {from_id}: {text}")
+
+        if chat_id == CHAT_READ and is_sticker(msg) and stickers_disabled and from_id != DEVELOPER_ID:
+            try:
+                api.messages.delete(conversation_message_ids=msg_id, peer_id=chat_id, spam=False)
+                log(f"Удалён стикер от {from_id} в чате {chat_id}")
+            except Exception as e:
+                log(f"Ошибка удаления стикера: {e}")
+            return "ok"
+
+        if chat_id == CHAT_WRITE and text.lower() == "/stick":
+            if from_id != DEVELOPER_ID:
+                send_msg(CHAT_WRITE, "Только разработчик может управлять стикерами.")
+                return "ok"
+            global stickers_disabled
+            stickers_disabled = not stickers_disabled
+            save_sticker_state()
+            title = get_chat_title(CHAT_READ)
+            if stickers_disabled:
+                send_msg(CHAT_WRITE, f"Стиcker запрещены в «{title}»")
+            else:
+                send_msg(CHAT_WRITE, f"Стиcker разрешены в «{title}»")
+            return "ok"
 
         if text.lower().startswith("code ") and chat_id == CHAT_READ:
             parts = text.split(None, 1)
@@ -99,6 +163,11 @@ def vk_callback():
 @app.route("/")
 def index():
     return "Seych 2.0 running"
+
+
+@app.route("/ping")
+def ping():
+    return "pong"
 
 
 if __name__ == "__main__":
