@@ -99,12 +99,12 @@ def vk_callback():
 
         if chat_id == CHAT_WRITE and from_id != DEVELOPER_ID:
             if is_sticker(msg) and state["stickers_disabled"]:
-                msg_id = msg.get("id", 0)
+                cm_id = msg.get("conversation_message_id", 0)
                 try:
-                    api.messages.delete(message_ids=msg_id, spam=False)
-                    log(f"Удалён стикер от {from_id} в архивном чате, msg_id={msg_id}")
+                    api.messages.delete(conversation_message_ids=str(cm_id), peer_id=chat_id)
+                    log(f"Удалён стикер от {from_id} в архивном чате, cm_id={cm_id}")
                 except Exception as e:
-                    log(f"Ошибка удаления стикера (id={msg_id}): {e}")
+                    log(f"Ошибка удаления стикера (cm_id={cm_id}): {e}")
                 return "ok"
             attachments = msg.get("attachments", [])
             if attachments:
