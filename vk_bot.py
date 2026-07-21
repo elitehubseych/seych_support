@@ -18,21 +18,20 @@ vk = vk_api.VkApi(token=GROUP_TOKEN)
 api = vk.get_api()
 
 pending = {}
-stickers_disabled = True
+state = {"stickers_disabled": True}
 
 STICKER_FILE = "stickers_state.json"
 
 def load_sticker_state():
-    global stickers_disabled
     try:
         with open(STICKER_FILE, "r") as f:
-            stickers_disabled = json.load(f).get("disabled", True)
+            state["stickers_disabled"] = json.load(f).get("disabled", True)
     except:
-        stickers_disabled = True
+        state["stickers_disabled"] = True
 
 def save_sticker_state():
     with open(STICKER_FILE, "w") as f:
-        json.dump({"disabled": stickers_disabled}, f)
+        json.dump({"disabled": state["stickers_disabled"]}, f)
 
 load_sticker_state()
 
@@ -71,7 +70,7 @@ def is_sticker(msg):
 me = api.groups.getById()
 group_id = me[0]["id"]
 log(f"Группа: {me[0]['name']} (ID: {group_id})")
-log(f"Stickers disabled: {stickers_disabled}")
+log(f"Stickers disabled: {state['stickers_disabled']}")
 
 chat_title = get_chat_title(CHAT_READ)
 log(f"Основной чат: {chat_title} ({CHAT_READ})")
@@ -98,7 +97,7 @@ def vk_callback():
         if from_id < 0:
             log(f"Сообщение от группы {from_id}: {text}")
 
-        if chat_id == CHAT_READ and is_sticker(msg) and stickers_disabled and from_id != DEVELOPER_ID:
+        if chat_id == CHAT_READ and is_sticker(msg) and state["stickers_disabled"] and from_id != DEVELOPER_ID:
             try:
                 api.messages.delete(conversation_message_ids=msg_id, peer_id=chat_id, spam=False)
                 log(f"Удалён стикер от {from_id} в чате {chat_id}")
@@ -110,11 +109,10 @@ def vk_callback():
             if from_id != DEVELOPER_ID:
                 send_msg(CHAT_WRITE, "Только разработчик может управлять стикерами.")
                 return "ok"
-            global stickers_disabled
-            stickers_disabled = not stickers_disabled
+            state["stickers_disabled"] = not state["stickers_disabled"]
             save_sticker_state()
             title = get_chat_title(CHAT_READ)
-            if stickers_disabled:
+            if state["stickers_disabled"]:
                 send_msg(CHAT_WRITE, f"Стиcker запрещены в «{title}»")
             else:
                 send_msg(CHAT_WRITE, f"Стиcker разрешены в «{title}»")
