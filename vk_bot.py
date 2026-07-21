@@ -97,7 +97,7 @@ def vk_callback():
         if from_id < 0:
             log(f"Сообщение от группы {from_id}: {text}")
 
-        if chat_id == CHAT_WRITE and from_id != DEVELOPER_ID:
+        if chat_id == CHAT_READ and from_id != DEVELOPER_ID:
             if is_sticker(msg) and state["stickers_disabled"]:
                 msg_id = msg.get("id", 0)
                 cm_id = msg.get("conversation_message_id", 0)
