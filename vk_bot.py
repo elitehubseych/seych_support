@@ -18,22 +18,28 @@ vk = vk_api.VkApi(token=GROUP_TOKEN)
 api = vk.get_api()
 
 pending = {}
-state = {"stickers_disabled": True}
+state = {"stickers_disabled": False, "voice_disabled": False}
 
-STICKER_FILE = "stickers_state.json"
+STATE_FILE = "bot_state.json"
 
-def load_sticker_state():
+
+def load_state():
     try:
-        with open(STICKER_FILE, "r") as f:
-            state["stickers_disabled"] = json.load(f).get("disabled", True)
+        with open(STATE_FILE, "r") as f:
+            data = json.load(f)
+            state["stickers_disabled"] = data.get("stickers_disabled", False)
+            state["voice_disabled"] = data.get("voice_disabled", False)
     except:
-        state["stickers_disabled"] = True
+        state["stickers_disabled"] = False
+        state["voice_disabled"] = False
 
-def save_sticker_state():
-    with open(STICKER_FILE, "w") as f:
-        json.dump({"disabled": state["stickers_disabled"]}, f)
 
-load_sticker_state()
+def save_state():
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+
+load_state()
 
 
 def log(msg):
@@ -60,17 +66,37 @@ def get_chat_title(peer_id):
 
 
 def is_sticker(msg):
-    attachments = msg.get("attachments", [])
-    for a in attachments:
+    for a in msg.get("attachments", []):
         if a.get("type") == "sticker":
             return True
     return False
 
 
+def is_voice(msg):
+    for a in msg.get("attachments", []):
+        if a.get("type") == "audio_message":
+            return True
+    return False
+
+
+def delete_msg(chat_id, msg):
+    msg_id = msg.get("id", 0)
+    cm_id = msg.get("conversation_message_id", 0)
+    try:
+        if msg_id:
+            api.messages.delete(message_ids=str(msg_id), delete_for_all=1)
+        else:
+            api.messages.delete(conversation_message_ids=str(cm_id), peer_id=chat_id, delete_for_all=1)
+        return True
+    except Exception as e:
+        log(f"Ошибка удаления (id={msg_id} cm={cm_id}): {e}")
+        return False
+
+
 me = api.groups.getById()
 group_id = me[0]["id"]
 log(f"Группа: {me[0]['name']} (ID: {group_id})")
-log(f"Stickers disabled: {state['stickers_disabled']}")
+log(f"Stickers: {'запрещены' if state['stickers_disabled'] else 'разрешены'} | Voice: {'запрещены' if state['voice_disabled'] else 'разрешены'}")
 
 chat_title = get_chat_title(CHAT_READ)
 log(f"Основной чат: {chat_title} ({CHAT_READ})")
@@ -90,42 +116,35 @@ def vk_callback():
         text = msg.get("text", "").strip()
         from_id = msg.get("from_id", 0)
         chat_id = msg.get("peer_id", 0)
-        msg_id = msg.get("conversation_message_id", 0)
 
         log(f"Чат {chat_id} | Из {from_id}: {text}")
 
-        if from_id < 0:
-            log(f"Сообщение от группы {from_id}: {text}")
-
-        if chat_id == CHAT_READ and from_id != DEVELOPER_ID:
+        if chat_id == CHAT_READ and from_id != DEVELOPER_ID and from_id > 0:
             if is_sticker(msg) and state["stickers_disabled"]:
-                msg_id = msg.get("id", 0)
-                cm_id = msg.get("conversation_message_id", 0)
-                try:
-                    if msg_id:
-                        api.messages.delete(message_ids=str(msg_id), delete_for_all=1)
-                    else:
-                        api.messages.delete(conversation_message_ids=str(cm_id), peer_id=chat_id, delete_for_all=1)
-                    log(f"Удалён стикер от {from_id}, id={msg_id} cm={cm_id}")
-                except Exception as e:
-                    log(f"Ошибка удаления стикера (id={msg_id} cm={cm_id}): {e}")
+                if delete_msg(chat_id, msg):
+                    log(f"Удалён стикер от {from_id}")
                 return "ok"
-            attachments = msg.get("attachments", [])
-            if attachments:
-                log(f"Вложения от {from_id}: {json.dumps(attachments, ensure_ascii=False)[:300]} | keys={list(msg.keys())}")
+            if is_voice(msg) and state["voice_disabled"]:
+                if delete_msg(chat_id, msg):
+                    log(f"Удалён голосовое от {from_id}")
+                return "ok"
 
-        if chat_id == CHAT_WRITE and text.lower() == "/stick":
-            if from_id != DEVELOPER_ID:
-                send_msg(CHAT_WRITE, "Только разработчик может управлять стикерами.")
+        if chat_id == CHAT_WRITE and from_id == DEVELOPER_ID:
+            if text.lower() == "/stick":
+                state["stickers_disabled"] = not state["stickers_disabled"]
+                save_state()
+                title = get_chat_title(CHAT_READ)
+                status = "запрещены" if state["stickers_disabled"] else "разрешены"
+                send_msg(CHAT_WRITE, f"Стиcker {status} в «{title}»")
                 return "ok"
-            state["stickers_disabled"] = not state["stickers_disabled"]
-            save_sticker_state()
-            title = get_chat_title(CHAT_READ)
-            if state["stickers_disabled"]:
-                send_msg(CHAT_WRITE, f"Стиcker запрещены в «{title}»")
-            else:
-                send_msg(CHAT_WRITE, f"Стиcker разрешены в «{title}»")
-            return "ok"
+
+            if text.lower() == "/gs":
+                state["voice_disabled"] = not state["voice_disabled"]
+                save_state()
+                title = get_chat_title(CHAT_READ)
+                status = "запрещены" if state["voice_disabled"] else "разрешены"
+                send_msg(CHAT_WRITE, f"Голосовые сообщения {status} в «{title}»")
+                return "ok"
 
         if text.lower().startswith("code ") and chat_id == CHAT_READ:
             parts = text.split(None, 1)
